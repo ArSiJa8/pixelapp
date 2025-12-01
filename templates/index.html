@@ -11,6 +11,7 @@
 </head>
 <body>
 <h1 style="text-align:center;">8x8 Pixel Malprogramm</h1>
+
 <table id="grid">
   {% for row in grid %}
     <tr>
@@ -21,11 +22,16 @@
   {% endfor %}
 </table>
 
-<div style="text-align:center;">
+<div style="text-align:center; margin-top:20px;">
   {% for color in ["#2596be","#f6f6f6","#3f2a29","#caa62c","#9c6908","#910102","#f9d1c0","#3f2a29"] %}
     <button onclick="selectColor('{{color}}')" style="background-color: {{color}}; width: 40px; height: 40px; border: none; margin:2px;"></button>
   {% endfor %}
   <button onclick="resetGrid()">Reset</button>
+</div>
+
+<div style="text-align:center; margin-top:10px;">
+  <input type="file" id="imageInput">
+  <button onclick="uploadImage()">Upload & Draw</button>
 </div>
 
 <script>
@@ -42,7 +48,7 @@ for(let r=0; r<8; r++){
             fetch("/paint", {
                 method: "POST",
                 headers: {"Content-Type":"application/json"},
-                body: JSON.stringify({row: r, col: c, color: selectedColor})
+                body: JSON.stringify({row:r,col:c,color:selectedColor})
             }).then(()=>{ table.rows[r].cells[c].style.backgroundColor = selectedColor });
         });
     }
@@ -58,7 +64,30 @@ function resetGrid(){
         }
     });
 }
+
+function uploadImage(){
+    const input = document.getElementById("imageInput");
+    if(input.files.length == 0) return;
+    const formData = new FormData();
+    formData.append("file", input.files[0]);
+    
+    fetch("/upload", {method:"POST", body:formData})
+    .then(resp => resp.json())
+    .then(data => {
+        if(data.status=="ok"){
+            fetch("/").then(r=>r.text()).then(html=>{
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(html,"text/html");
+                const newTable = doc.getElementById("grid");
+                for(let r=0;r<8;r++){
+                    for(let c=0;c<8;c++){
+                        table.rows[r].cells[c].style.backgroundColor = newTable.rows[r].cells[c].style.backgroundColor;
+                    }
+                }
+            });
+        }
+    });
+}
 </script>
 </body>
 </html>
-
