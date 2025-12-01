@@ -1,1 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>8x8 Pixel Malprogramm</title>
+<style>
+  table { border-collapse: collapse; margin: 20px auto; }
+  td { width: 50px; height: 50px; border: 1px solid #ccc; cursor: pointer; }
+</style>
+</head>
+<body>
+<h1 style="text-align:center;">8x8 Pixel Malprogramm</h1>
+<table id="grid">
+  {% for row in grid %}
+    <tr>
+      {% for cell in row %}
+        <td style="background-color: {{cell}};"></td>
+      {% endfor %}
+    </tr>
+  {% endfor %}
+</table>
+
+<div style="text-align:center;">
+  {% for color in ["#2596be","#f6f6f6","#3f2a29","#caa62c","#9c6908","#910102","#f9d1c0","#3f2a29"] %}
+    <button onclick="selectColor('{{color}}')" style="background-color: {{color}}; width: 40px; height: 40px; border: none; margin:2px;"></button>
+  {% endfor %}
+  <button onclick="resetGrid()">Reset</button>
+</div>
+
+<script>
+let selectedColor = "#2596be";
+
+function selectColor(color){
+    selectedColor = color;
+}
+
+const table = document.getElementById("grid");
+for(let r=0; r<8; r++){
+    for(let c=0; c<8; c++){
+        table.rows[r].cells[c].addEventListener("click", ()=>{
+            fetch("/paint", {
+                method: "POST",
+                headers: {"Content-Type":"application/json"},
+                body: JSON.stringify({row: r, col: c, color: selectedColor})
+            }).then(()=>{ table.rows[r].cells[c].style.backgroundColor = selectedColor });
+        });
+    }
+}
+
+function resetGrid(){
+    fetch("/reset", {method:"POST"})
+    .then(()=>{ 
+        for(let r=0;r<8;r++){
+            for(let c=0;c<8;c++){
+                table.rows[r].cells[c].style.backgroundColor = "#2596be";
+            }
+        }
+    });
+}
+</script>
+</body>
+</html>
 
