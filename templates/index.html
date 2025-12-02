@@ -1,38 +1,66 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>Pixel Editor 8x8</title>
-<style>
-    body { font-family: sans-serif; text-align:center; margin:20px; }
-    #grid { display:grid; grid-template-columns: repeat(8,40px); grid-gap:1px; margin:auto; }
-    .cell { width:40px; height:40px; border:1px solid #ccc; cursor:pointer; }
-    button { margin:5px; padding:5px 10px; }
-</style>
+    <meta charset="UTF-8">
+    <title>Pixel App</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        textarea { width: 100%; height: 150px; }
+        button { margin-top: 10px; }
+    </style>
 </head>
 <body>
-<h1>Pixel Editor 8x8</h1>
+    <h1>Pixel App</h1>
 
-<div id="palette">
-    <button style="background:#2596be" onclick="setColor('#2596be')"></button>
-    <button style="background:#f6f6f6" onclick="setColor('#f6f6f6')"></button>
-    <button style="background:#3f2a29" onclick="setColor('#3f2a29')"></button>
-    <button style="background:#caa62c" onclick="setColor('#caa62c')"></button>
-    <button style="background:#9c6908" onclick="setColor('#9c6908')"></button>
-    <button style="background:#910102" onclick="setColor('#910102')"></button>
-    <button style="background:#f9d1c0" onclick="setColor('#f9d1c0')"></button>
-</div>
+    <label for="text">Text zum Generieren:</label><br>
+    <textarea id="text"></textarea><br>
+    <button onclick="generateText()">Generieren</button>
+    <button onclick="exportArsip()">Export als .arsip</button>
+    <input type="file" id="importFile" onchange="importArsip()">
 
-<div id="grid"></div>
+    <h2>Output</h2>
+    <textarea id="output" readonly></textarea>
 
-<br>
-<button onclick="exportTurtle()">Export Turtle</button>
-<button onclick="exportArsip()">Export ARSIP</button>
-<input type="file" id="importFile">
-<button onclick="importArsip()">Import ARSIP</button>
+    <script>
+        const PALETTE = {{ palette|tojson }};
+        
+        async function generateText() {
+            const text = document.getElementById("text").value;
+            const response = await fetch("/generate", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ text })
+            });
+            const data = await response.json();
+            document.getElementById("output").value = data.result;
+        }
 
-<pre id="output"></pre>
+        async function exportArsip() {
+            const content = { text: document.getElementById("text").value };
+            const response = await fetch("/export", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(content)
+            });
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "export.arsip";
+            a.click();
+            window.URL.revokeObjectURL(url);
+        }
 
-<script src="/static/script.js"></script>
+        async function importArsip() {
+            const fileInput = document.getElementById("importFile");
+            if (!fileInput.files.length) return;
+            const formData = new FormData();
+            formData.append("file", fileInput.files[0]);
+            const response = await fetch("/import", { method: "POST", body: formData });
+            const data = await response.json();
+            document.getElementById("text").value = data.text || "";
+            document.getElementById("output").value = "";
+        }
+    </script>
 </body>
 </html>
