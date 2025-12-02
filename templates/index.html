@@ -1,123 +1,225 @@
 <!DOCTYPE html>
-<html>
+<html lang="de">
 <head>
-    <title>8x8 Pixel Painter</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            text-align: center;
-            background: #222;
-            color: white;
-        }
-
-        #grid {
-            display: grid;
-            grid-template-columns: repeat(8, 40px);
-            grid-template-rows: repeat(8, 40px);
-            gap: 2px;
-            margin: 20px auto;
-        }
-
-        .pixel {
-            width: 40px;
-            height: 40px;
-            background: #444;
-            border: 1px solid #222;
-            cursor: pointer;
-        }
-
-        #colors {
-            margin: 20px;
-        }
-
-        .color {
-            width: 30px;
-            height: 30px;
-            display: inline-block;
-            margin: 5px;
-            border: 2px solid white;
-            cursor: pointer;
-        }
-
-        #exportBtn, #resetBtn {
-            padding: 10px 20px;
-            font-size: 16px;
-            margin: 10px;
-            cursor: pointer;
-        }
-    </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>8x8 Pixel Painter + Turtle Export</title>
+<style>
+  body { font-family: Arial, sans-serif; background:#111; color:#eee; text-align:center; margin:0; padding:20px; }
+  h1 { margin: 6px 0 14px 0; }
+  #palette { margin-bottom: 12px; }
+  .swatch { width:36px; height:36px; display:inline-block; margin:6px; border:2px solid #222; cursor:pointer; border-radius:4px; box-shadow:0 0 0 2px rgba(255,255,255,0.02); }
+  .swatch.selected { outline:3px solid #fff; }
+  #grid { display:grid; grid-template-columns: repeat(8, 40px); gap:4px; justify-content:center; margin: 12px auto; }
+  .cell { width:40px; height:40px; background:#444; cursor:pointer; border-radius:3px; box-shadow: inset 0 -2px 0 rgba(0,0,0,0.3); }
+  #controls { margin-top:12px; }
+  button { padding:8px 12px; margin:6px; font-size:14px; cursor:pointer; border-radius:6px; border:none; }
+  #scriptBox { width:90%; height:260px; margin:12px auto; display:block; background:#0b0b0b; color:#dcdcdc; border:1px solid #333; padding:10px; font-family: monospace; white-space: pre; overflow:auto; }
+  #topbar { display:flex; gap:10px; justify-content:center; align-items:center; flex-wrap:wrap; }
+  input[type="range"] { width:160px; vertical-align:middle; }
+</style>
 </head>
 <body>
+  <h1>8×8 Pixel Painter — Turtle Export</h1>
 
-<h1>8x8 Pixel Painter</h1>
+  <div id="palette"></div>
 
-<div id="colors"></div>
+  <div id="topbar">
+    <div>
+      <label>Größe (Pixel-Preview):</label>
+      <input id="previewRange" type="range" min="20" max="80" value="40">
+    </div>
+    <div>
+      <button id="undoBtn">Undo</button>
+      <button id="resetBtn">Reset</button>
+      <button id="exportPngBtn">Export PNG</button>
+      <button id="exportTurtleBtn">Export Turtle</button>
+    </div>
+  </div>
 
-<div id="grid"></div>
+  <div id="grid"></div>
 
-<button id="resetBtn">Reset</button>
-<button id="exportBtn">Export PNG</button>
-
-<canvas id="canvas" width="8" height="8" style="display:none;"></canvas>
+  <textarea id="scriptBox" readonly placeholder="Turtle script erscheint hier..."></textarea>
+  <div>
+    <button id="copyBtn">Kopieren</button>
+    <button id="downloadBtn">Download .py</button>
+  </div>
 
 <script>
-    // Deine erlaubten Farben
-    const colors = [
-        "#2596be", "#f6f6f6", "#3f2a29", "#caa62c",
-        "#9c6908", "#910102", "#f9d1c0", "#3f2a29"
-    ];
+  // Palette from server-rendered variable
+  const PALETTE = {{ palette|tojson }};
+  let currentColor = PALETTE[0];
 
-    let currentColor = colors[0];
+  const paletteDiv = document.getElementById("palette");
+  const gridDiv = document.getElementById("grid");
+  const scriptBox = document.getElementById("scriptBox");
+  const previewRange = document.getElementById("previewRange");
 
-    // Farbpalette anzeigen
-    const colorContainer = document.getElementById("colors");
-    colors.forEach(color => {
-        let c = document.createElement("div");
-        c.className = "color";
-        c.style.background = color;
-        c.onclick = () => currentColor = color;
-        colorContainer.appendChild(c);
-    });
+  // history for undo (stores {r,c,oldColor})
+  const history = [];
 
-    // 8x8 grid machen
-    const grid = document.getElementById("grid");
-    let pixels = [];
+  // initialize palette UI
+  PALETTE.forEach((c, i) => {
+    const d = document.createElement("div");
+    d.className = "swatch";
+    d.style.background = c;
+    if (i === 0) d.classList.add("selected");
+    d.onclick = () => {
+      currentColor = c;
+      document.querySelectorAll('.swatch').forEach(s => s.classList.remove('selected'));
+      d.classList.add('selected');
+    };
+    paletteDiv.appendChild(d);
+  });
 
-    for (let i = 0; i < 64; i++) {
-        let p = document.createElement("div");
-        p.className = "pixel";
-        p.onclick = () => {
-            p.style.background = currentColor;
+  // build 8x8 grid and internal grid state
+  let gridState = [];
+  function buildGrid(cellSize = 40) {
+    gridDiv.style.gridTemplateColumns = `repeat(8, ${cellSize}px)`;
+    gridDiv.innerHTML = "";
+    gridState = [];
+    for (let r = 0; r < 8; r++) {
+      const row = [];
+      for (let c = 0; c < 8; c++) {
+        const cell = document.createElement("div");
+        cell.className = "cell";
+        cell.dataset.r = r;
+        cell.dataset.c = c;
+        cell.style.width = cellSize + "px";
+        cell.style.height = cellSize + "px";
+        cell.style.background = PALETTE[0];
+        cell.onclick = () => {
+          const old = cell.style.background;
+          if (old === currentColor) return;
+          history.push({r: r, c: c, old: old});
+          cell.style.background = currentColor;
+          gridState[r][c] = currentColor;
         };
-        pixels.push(p);
-        grid.appendChild(p);
+        gridDiv.appendChild(cell);
+        row.push(PALETTE[0]);
+      }
+      gridState.push(row);
+    }
+  }
+
+  // initial build
+  buildGrid(parseInt(previewRange.value, 10));
+
+  // preview range changes cell size
+  previewRange.addEventListener("input", () => {
+    buildGrid(parseInt(previewRange.value, 10));
+    // After rebuild we have default colors; copy any previous gridState if present
+  });
+
+  // Undo
+  document.getElementById("undoBtn").onclick = () => {
+    const h = history.pop();
+    if (!h) return;
+    const r = h.r, c = h.c;
+    const idx = r * 8 + c;
+    const cell = gridDiv.children[idx];
+    cell.style.background = h.old;
+    gridState[r][c] = h.old;
+  };
+
+  // Reset
+  document.getElementById("resetBtn").onclick = () => {
+    history.length = 0;
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        gridDiv.children[r*8 + c].style.background = PALETTE[0];
+        gridState[r][c] = PALETTE[0];
+      }
+    }
+    scriptBox.value = "";
+  };
+
+  // Export PNG (clientside). Scale 8x8 to a larger image for download
+  document.getElementById("exportPngBtn").onclick = () => {
+    const canvas = document.createElement("canvas");
+    const size = 8;
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    // fill pixel-by-pixel
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        ctx.fillStyle = gridDiv.children[r*8 + c].style.background;
+        ctx.fillRect(c, r, 1, 1);
+      }
+    }
+    // upscale for download to preserve sharp pixels
+    const scale = 40;
+    const out = document.createElement("canvas");
+    out.width = size * scale;
+    out.height = size * scale;
+    const outCtx = out.getContext("2d");
+    outCtx.imageSmoothingEnabled = false;
+    outCtx.drawImage(canvas, 0, 0, out.width, out.height);
+    out.toBlob((blob) => {
+      const link = document.createElement("a");
+      link.download = "pixel_art.png";
+      link.href = URL.createObjectURL(blob);
+      link.click();
+      URL.revokeObjectURL(link.href);
+    });
+  };
+
+  // Export Turtle: send current grid colors to server, get script back
+  document.getElementById("exportTurtleBtn").onclick = async () => {
+    // gather grid as 8x8 array of hex colors
+    const grid = [];
+    for (let r = 0; r < 8; r++) {
+      const row = [];
+      for (let c = 0; c < 8; c++) {
+        row.push(gridDiv.children[r*8 + c].style.background || PALETTE[0]);
+      }
+      grid.push(row);
     }
 
-    // Reset
-    document.getElementById("resetBtn").onclick = () => {
-        pixels.forEach(p => p.style.background = "#444");
-    };
+    // POST to server
+    try {
+      const resp = await fetch("/export_turtle", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({grid: grid})
+      });
+      const data = await resp.json();
+      if (data.script) {
+        scriptBox.value = data.script;
+      } else if (data.error) {
+        scriptBox.value = "# Fehler: " + data.error;
+      } else {
+        scriptBox.value = "# Unbekannte Antwort vom Server.";
+      }
+    } catch (e) {
+      scriptBox.value = "# Fehler beim Export: " + e.toString();
+    }
+  };
 
-    // Export PNG
-    document.getElementById("exportBtn").onclick = () => {
-        const canvas = document.getElementById("canvas");
-        const ctx = canvas.getContext("2d");
+  // Copy script to clipboard
+  document.getElementById("copyBtn").onclick = async () => {
+    if (!scriptBox.value) return;
+    try {
+      await navigator.clipboard.writeText(scriptBox.value);
+      alert("Script in Zwischenablage kopiert!");
+    } catch (e) {
+      alert("Kopieren fehlgeschlagen: " + e);
+    }
+  };
 
-        const size = 8;
-        for (let i = 0; i < 64; i++) {
-            let x = i % size;
-            let y = Math.floor(i / size);
-            ctx.fillStyle = pixels[i].style.background;
-            ctx.fillRect(x, y, 1, 1);
-        }
+  // Download script as .py
+  document.getElementById("downloadBtn").onclick = () => {
+    if (!scriptBox.value) return;
+    const blob = new Blob([scriptBox.value], {type: "text/x-python"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "pixel_art_turtle.py";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
-        // Download
-        let link = document.createElement("a");
-        link.download = "pixel_art.png";
-        link.href = canvas.toDataURL();
-        link.click();
-    };
 </script>
-
 </body>
 </html>
